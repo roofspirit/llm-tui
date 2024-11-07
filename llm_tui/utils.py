@@ -2,6 +2,7 @@ import base64
 import binascii
 import datetime
 
+
 def is_base64(string: str) -> bool:
     try:
         base64.b64decode(string, validate=True)
@@ -9,6 +10,7 @@ def is_base64(string: str) -> bool:
         return False
     else:
         return True
+
 
 def get_datetime_from_timestamp(timestamp: int) -> datetime.datetime:
     try:

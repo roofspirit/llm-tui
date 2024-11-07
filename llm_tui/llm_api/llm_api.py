@@ -48,7 +48,7 @@ class AccessToken:
     expires_at: datetime
 
 
-GigaChatMessageRoles: TypeAlias = Literal["gigachat", "user", "assistant"]
+GigaChatMessageRoles: TypeAlias = Literal["system", "user", "assistant"]
 
 
 class GigaChatMessage(TypedDict):
@@ -59,10 +59,11 @@ class GigaChatMessage(TypedDict):
 class GigaChatConnector:
     auth_token: str
     api_scope: str
-    access_token: AccessToken
+    _access_token: AccessToken
 
     chats: dict[str, list[GigaChatMessage]]
     chats_json_path: str
+    current_chat_id: str
 
     OAUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     LLM_URL: str = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
@@ -98,7 +99,10 @@ class GigaChatConnector:
         }
         body = {"scope": "GIGACHAT_API_PERS"}
         response = requests.post(
-            url=GigaChatConnector.OAUTH_URL, headers=headers, data=body, verify=False
+            url=GigaChatConnector.OAUTH_URL,
+            headers=headers,
+            data=body,
+            verify=False,
         )
 
         match response.status_code:
@@ -118,7 +122,7 @@ class GigaChatConnector:
                 raise BadRequest(response.status_code)
 
     @staticmethod
-    def is_active_access_token(access_token: AccessToken):
+    def _is_active_access_token(access_token: AccessToken):
         return datetime.now() > access_token.expires_at
 
     @staticmethod
@@ -135,12 +139,7 @@ class GigaChatConnector:
         filepath: str, chats: dict[str, list[GigaChatMessage]]
     ) -> None:
         with open(filepath, "w", encoding="utf-8") as jsf:
-            json.dump(
-                chats,
-                jsf,
-                ensure_ascii=False,
-                indent=4
-            )
+            json.dump(chats, jsf, ensure_ascii=False, indent=4)
 
     @staticmethod
     def _get_messages(
@@ -197,10 +196,11 @@ class GigaChatConnector:
         return answer
 
     @staticmethod
-    def _get_balance(access_token: str) -> dict:
+    def _get_balance(access_token: AccessToken) -> dict:
         response = requests.get(
             GigaChatConnector.BALANCE_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
+            headers={"Authorization": f"Bearer {access_token.token}"},
+            verify=False,
         )
         match response.status_code:
             case 200:
@@ -221,14 +221,16 @@ class GigaChatConnector:
         self,
         auth_token: str,
         api_scope: str,
-        chats: dict[str, list[GigaChatMessage]] = {},
         chats_json_path: str = "",
+        chats: dict[str, list[GigaChatMessage]] = {},
+        max_tokens: int = 100,
     ) -> None:
         if not self.is_auth_token(auth_token):
             raise AuthorizationError("Provided auth_token is not valid")
 
         self.auth_token = auth_token
         self.api_scope = api_scope
+        self.max_tokens = max_tokens
 
         self.chats_json_path = chats_json_path
         if chats:
@@ -238,7 +240,26 @@ class GigaChatConnector:
         else:
             self.chats = {}
 
-        self.access_token = self.get_access_token(self.auth_token, self.api_scope)
+    def authorize(self) -> None:
+        self._access_token = self.get_access_token(self.auth_token, self.api_scope)
+
+    @property
+    def access_token(self) -> AccessToken:
+        if not self._is_active_access_token(self._access_token):
+            self.authorize()
+        return self._access_token
+
+    @property
+    def chat_ids(self) -> list[str]:
+        return list(self.chats.keys())
+
+    @property
+    def balance(self) -> int | None:
+        data = self._get_balance(self.access_token)
+        for item in data["balance"]:
+            if item["usage"] == GigaChatConnector.LLM_MODEL:
+                return item["value"]
+        return data["balance"][0]["value"]
 
     def read_chats_json(self) -> dict[str, list[GigaChatMessage]]:
         if not os.path.exists(self.chats_json_path):
@@ -248,41 +269,47 @@ class GigaChatConnector:
     def write_chats_json(self) -> None:
         self._write_chats_json(self.chats_json_path, self.chats)
 
-    def get_chats_ids(self) -> list[str]:
-        return list(self.chats.keys())
-
-    def get_balance(self) -> int | None:
-        data = self._get_balance(self.auth_token)
-        for item in data["balance"]:
-            if item["usage"] == GigaChatConnector.LLM_MODEL:
-                return item["value"]
-        return data["balance"][0]["value"]
+    def is_chat_exists(self, chat_id: str) -> bool:
+        return chat_id in self.chats
 
     def add_chat(self, chat_id: str) -> None:
-        if chat_id in self.chats:
+        if self.is_chat_exists(chat_id):
             raise ValueError(f"Chat {chat_id} already exists")
         else:
             self.chats[chat_id] = []
 
         self.write_chats_json()
 
-    def add_message(
-        self, chat_id: str, role: GigaChatMessageRoles, content: str
-    ) -> None:
-        if chat_id not in self.chats:
+    def select_chat(self, chat_id: str):
+        if self.is_chat_exists(chat_id):
+            self.current_chat_id = chat_id
+        else:
             self.add_chat(chat_id)
+            self.current_chat_id = chat_id
 
-        self.chats[chat_id].append({"role": role, "content": content})
+    def add_message(self, role: GigaChatMessageRoles, content: str) -> None:
+        self.chats[self.current_chat_id].append({"role": role, "content": content})
 
         self.write_chats_json()
 
-    def get_answer(self, chat_id: str = "", max_tokens: int = 100) -> str:
-        messages = self._get_messages(self.chats, chat_id)
-        answer = self._get_answer(self.access_token, max_tokens, messages)
+    def add_system_prompt(self, text: str) -> None:
+        self.add_message(role="system", content=text)
+
+    def get_messages(self) -> list[GigaChatMessage]:
+        return self._get_messages(self.chats, self.current_chat_id)
+
+    def get_answer(self) -> str:
+        messages = self.get_messages()
+        answer = self._get_answer(self.access_token, self.max_tokens, messages)
         message = answer["choices"][0]["message"]
         role, content = message["role"], message["content"]
-        self.add_message(chat_id, role, content)
+        self.add_message(role, content)
         return content
+
+    def ask(self, text: str) -> str:
+        self.add_message(role="user", content=text)
+        result = self.get_answer()
+        return result
 
 
 class LLMConnector:
@@ -304,10 +331,8 @@ if __name__ == "__main__":
             api_scope=Constants.GIGACHAT_API_SCOPE,
             auth_token=Constants.GIGACHAT_AUTH_TOKEN,
             chats_json_path=Constants.GIGACHAT_CHATS_JSON,
+            max_tokens=Constants.GIGACHAT_MAX_TOKENS,
         )
-        giga.add_message(
-            chat_id="test",
-            role="user",
-            content="Привет, как дела?",
-        )
-        print(giga.get_answer(chat_id="test", max_tokens=Constants.GIGACHAT_MAX_TOKENS))
+        giga.authorize()
+        giga.select_chat("test")
+        print(giga.ask("How old are you?"))
