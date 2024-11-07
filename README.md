@@ -56,5 +56,13 @@
     - Установка пакетов
       - `pip install -r requirements.txt`
 
-4. Запустите модуль `main`
+4. Введите настройки в файле `.env` (их также можно передать как переменные среды при запуске модуля)
+ - `GIGACHAT_AUTH_TOKEN` - Ваш ключ авторизации. Подробности как получить ключ авторизации GigaChat [здесь](https://developers.sber.ru/docs/ru/gigachat/quickstart/ind-using-api)
+ - `GIGACHAT_API_SCOPE` `[PERS/B2B/CORP]` - Версия API без префикса `GIGACHAT_API_`, по-умолчанию `PERS` для физических лиц. Подробнее [здесь](https://developers.sber.ru/docs/ru/gigachat/api/reference/rest/post-token)
+ - `GIGACHAT_CHATS_JSON` - Путь до файла, в котором хранятся чаты и сообщения. По-
+ - `GIGACHAT_MAX_TOKENS` - Максимальное количество токенов для генерации ответов. По-умолчанию `100`, для экономии токенов в бесплатной версии
+
+5. Запустите модуль `main`
  - `python -m llm_tui.main`
+ - С перемнными среды в MacOS/Linux: `GIGACHAT_API_SCOPE=PERS GIGACHAT_MAX_TOKENS=100 <...> python -m llm_tui.main`
+
