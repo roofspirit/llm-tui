@@ -1,5 +1,4 @@
 # LLM TUI
----
 
 Консольное приложение на Python для работы с LLM-моделями.
 На данный момент поддерживает только GigaChat
@@ -64,5 +63,6 @@
 
 5. Запустите модуль `main`
  - `python -m llm_tui.main`
- - С перемнными среды в MacOS/Linux: `GIGACHAT_API_SCOPE=PERS GIGACHAT_MAX_TOKENS=100 <...> python -m llm_tui.main`
+ - С перемнными среды в MacOS/Linux:
+```GIGACHAT_API_SCOPE=PERS GIGACHAT_MAX_TOKENS=100 <...> python -m llm_tui.main```
 
