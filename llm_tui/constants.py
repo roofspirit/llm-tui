@@ -6,7 +6,6 @@ current_dir = os.getcwd()
 
 # Load environment variables from .env file if present
 ENV_FILE_PATH = os.environ.get("ENV_FILE_PATH", os.path.join(current_dir, ".env"))
-
 # Загрузка переменных окружения из файла, если он существует
 if os.path.exists(ENV_FILE_PATH):
     with open(ENV_FILE_PATH, "r", encoding="utf-8") as envfile:
@@ -43,8 +42,11 @@ if gigachat_api_type and gigachat_api_type in GigaChatApiShortScope.__members__:
 
 # Проверка файла с чатами
 if not os.path.isfile(Constants.GIGACHAT_CHATS_JSON):
+
     # Create directories if they do not exist
-    os.makedirs(os.path.dirname(Constants.GIGACHAT_CHATS_JSON), exist_ok=True)
+    directory_name = os.path.dirname(Constants.GIGACHAT_CHATS_JSON)
+    if directory_name:
+        os.makedirs(directory_name, exist_ok=True)
 
     # Create an empty JSON file
     with open(Constants.GIGACHAT_CHATS_JSON, 'w', encoding='utf-8') as file:
